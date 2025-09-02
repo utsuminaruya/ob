@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,   // ← 環境変数だけにする
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 export async function POST(req: Request) {
   try {
     const data = await req.json();
+
+    console.log("SUPABASE_URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log("SUPABASE_KEY exists:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
     const { error } = await supabase
       .from("leads")
