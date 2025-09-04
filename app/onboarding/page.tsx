@@ -340,13 +340,16 @@ export default function OnboardingVIJA() {
   );
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-50 to-white py-8 px-4 sm:px-8">
+    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 to-white py-8 px-4 sm:px-8">
       <div className="mx-auto max-w-3xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">Mediflow Onboarding</h1>
+          <h1 className="text-2xl font-bold text-blue-700">
+            🏥 Mediflow Onboarding
+          </h1>
           {SwitchLang}
         </div>
+  
 
         <Card className="shadow-xl rounded-2xl">
           {step === 0 ? (
@@ -436,9 +439,10 @@ function Hero({ lang, T, onStart }: { lang: "ja"|"vi"; T: typeof L["ja"]; onStar
         <p className="text-muted-foreground">{T.heroSub}</p>
       </CardHeader>
       <CardContent className="flex flex-col items-center justify-center gap-4 pb-8">
-        <Button className="text-base px-6 py-6 rounded-2xl shadow-md" onClick={onStart}>
-          {T.start}
-        </Button>
+      <Button className="bg-green-600 hover:bg-green-700 text-white text-base px-6 py-6 rounded-2xl shadow-md" onClick={onStart}>
+  {T.start}
+</Button>
+
         <p className="text-xs text-muted-foreground">{T.langToggle}</p>
       </CardContent>
     </>
@@ -710,5 +714,18 @@ function RadioOption({ value, label }: { value: string; label: string; }) {
       <RadioGroupItem value={value} />
       <span>{label}</span>
     </Label>
+  );
+}
+
+import CTA from "../components/CTA";
+
+export default function OnboardingPage() {
+  return (
+    <main className="p-6 bg-white">
+      {/* ここに既存のオンボーディングフォームや説明が入る */}
+      
+      {/* CTAを追加 */}
+      <CTA />
+    </main>
   );
 }
