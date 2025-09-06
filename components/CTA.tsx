@@ -1,27 +1,27 @@
-import Link from "next/link";
+'use client';
 
 export default function CTA() {
   return (
-    <div className="bg-blue-50 border-t border-blue-200 py-12 mt-12 text-center rounded-xl shadow-sm">
-      <h2 className="text-2xl font-bold text-blue-700 mb-4">
-        次のステップに進みましょう！
-      </h2>
-      <p className="mb-6 text-gray-700">
-        LINEやMessengerで求人・学習サポート・生活情報を無料で受け取れます。
+    <div className="mt-8 rounded-2xl border p-6 bg-gradient-to-br from-sky-50 to-blue-50 shadow">
+      <h2 className="text-xl font-bold text-blue-800">無料相談・求人紹介を希望しますか？</h2>
+      <p className="text-sm text-blue-700/80 mt-1">
+        LINEやMessengerで、ビザ相談から学習プランまで担当者がすぐに返信します。
       </p>
-      <div className="flex flex-col sm:flex-row justify-center gap-4">
-        <Link
-          href="https://lin.ee/xUocVyI"
-          className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold shadow hover:bg-green-700 transition"
+      <div className="mt-4 flex flex-col sm:flex-row gap-3">
+        <a
+          href="https://lin.ee/"
+          target="_blank"
+          className="inline-flex items-center justify-center rounded-xl px-5 py-3 bg-emerald-600 text-white hover:bg-emerald-700"
         >
-          📲 LINEで登録する
-        </Link>
-        <Link
-          href="https://www.facebook.com/MediflowKK"
-          className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold shadow hover:bg-blue-700 transition"
+          LINEで相談する
+        </a>
+        <a
+          href="https://m.me/"
+          target="_blank"
+          className="inline-flex items-center justify-center rounded-xl px-5 py-3 border hover:bg-white/60"
         >
-          💬 Messengerで相談する
-        </Link>
+          Messengerで相談する
+        </a>
       </div>
     </div>
   );
