@@ -11,6 +11,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Check, ChevronLeft, ChevronRight, Clipboard, Loader2 } from "lucide-react";
+import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 // ========================
 // 30秒オンボーディングBOT（VI/JA） - 単一ファイルMVP
@@ -341,14 +343,6 @@ export default function OnboardingPage() {
       setLoading(false);
       setStep(8);
     }
-  }
-
-  async function copyJSON() {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(lead, null, 2));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (_) {}
   }
 
   const SwitchLang = (
@@ -764,3 +758,22 @@ function RadioOption({ value, label }: { value: string; label: string; }) {
     </Label>
   );
 }
+
+return (
+  <div className="min-h-dvh bg-gradient-to-b from-sky-50 to-white">
+    {/* 追加 */}
+    <SiteHeader />
+
+    <main className="mx-auto max-w-5xl px-4 py-10">
+      {/* ここに既存のオンボーディングUI */}
+      {/* ...フォーム... */}
+      {/* ...結果(上記のコピー削除版)... */}
+
+      {/* CTA */}
+      <CTA />
+    </main>
+
+    {/* 追加 */}
+    <SiteFooter />
+  </div>
+);
