@@ -14,10 +14,6 @@ import { Check, ChevronLeft, ChevronRight, Clipboard, Loader2 } from "lucide-rea
 
 // ========================
 // 30秒オンボーディングBOT（VI/JA） - 単一ファイルMVP
-// - 目的：VI/JA二言語で「目的→在留→勤務地→日本語レベル→経験→住居→連絡先」を30秒で入力
-// - 成果物：候補者JSON・“あなた専用の進路プラン” 要件差分と推奨アクションを自動生成
-// - 連携：/api/lead へ POST（必要なら差し替え） + クリップボードコピー
-// - 実装メモ：Tailwind + shadcn/ui 前提。Next.js/React どちらでも可。
 // ========================
 
 // ---- 言語辞書 ----
@@ -159,10 +155,10 @@ interface Lead {
   purpose: "job" | "study" | "life" | "multi";
   visa: "ssw" | "student" | "lt" | "na";
   jlpt: "N1" | "N2" | "N3" | "N4" | "N5" | "none";
-  expMonths: number; // caregiving months
+  expMonths: number;
   nightShift: boolean;
   location: string;
-  salaryManYen: number | null; // e.g., 23 => 230,000 JPY
+  salaryManYen: number | null;
   housing: "dorm" | "self" | "family";
   startWhen: "now" | "1-3" | "3+";
   contact: {
@@ -199,18 +195,16 @@ const defaultLead: Lead = {
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
 
 function computeFitScore(lead: Lead) {
-  // シンプルな適合スコア（0〜100）: JLPT, 経験, 夜勤, 立地に基づく仮スコア
   let score = 0;
   const jlptMap: Record<Lead["jlpt"], number> = { N1: 100, N2: 85, N3: 70, N4: 50, N5: 30, none: 10 };
   score += jlptMap[lead.jlpt] * 0.45;
   score += clamp(lead.expMonths / 24, 0, 1) * 100 * 0.35; // 2年で満点
   score += (lead.nightShift ? 1 : 0) * 100 * 0.1;
-  score += (lead.location ? 1 : 0) * 100 * 0.1; // 希望地入力で+10
+  score += (lead.location ? 1 : 0) * 100 * 0.1;
   return Math.round(score);
 }
 
 function requirementsGap(lead: Lead) {
-  // 例：SSW介護目安 = JLPT N4以上推奨（N3歓迎）、実務経験 0〜6ヶ月でも可（施設により異なる）
   const gaps: string[] = [];
   if (lead.jlpt === "none" || lead.jlpt === "N5") gaps.push("JLPT N4 取得を目指す（語彙・読解・聴解を毎日5分）");
   if (lead.jlpt === "N4") gaps.push("N3に向けた敬語・医療用語を強化（面接想定Q&A付き）");
@@ -279,8 +273,36 @@ function sampleLife(lang: "ja"|"vi") {
   return (lang === "ja" ? ja : vi);
 }
 
-// ---- コンポーネント ----
-export default function OnboardingVIJA() {
+// ---- CTA（同一ファイル内）----
+function CTA() {
+  return (
+    <div className="mt-8 rounded-2xl border p-6 bg-gradient-to-br from-sky-50 to-blue-50 shadow">
+      <h2 className="text-xl font-bold text-blue-800">無料相談・求人紹介を希望しますか？</h2>
+      <p className="text-sm text-blue-700/80 mt-1">
+        LINEやMessengerで、ビザ相談から学習プランまで担当者がすぐに返信します。
+      </p>
+      <div className="mt-4 flex flex-col sm:flex-row gap-3">
+        <a
+          href="https://lin.ee/"
+          target="_blank"
+          className="inline-flex items-center justify-center rounded-xl px-5 py-3 bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          LINEで相談する
+        </a>
+        <a
+          href="https://m.me/"
+          target="_blank"
+          className="inline-flex items-center justify-center rounded-xl px-5 py-3 border hover:bg-white/60"
+        >
+          Messengerで相談する
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ---- ページ本体（唯一の default export）----
+export default function OnboardingPage() {
   const [lang, setLang] = useState<"ja"|"vi">("ja");
   const T = L[lang];
   const [step, setStep] = useState(0); // 0: hero, 1..7: form, 8: plan
@@ -304,17 +326,15 @@ export default function OnboardingVIJA() {
   const fit = useMemo(() => computeFitScore(lead), [lead]);
   const gaps = useMemo(() => requirementsGap(lead), [lead]);
 
-  // ---- 送信（差し替え可） ----
   async function submitLead() {
     setLoading(true);
     try {
       const payload = { ...lead, meta: { ...lead.meta, lang, createdAt: new Date().toISOString() } };
-      const res = await fetch("/api/lead", {
+      await fetch("/api/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      // 成功/失敗にかかわらずプラン表示へ
     } catch (e) {
       console.warn("/api/lead post failed", e);
     } finally {
@@ -344,12 +364,9 @@ export default function OnboardingVIJA() {
       <div className="mx-auto max-w-3xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-blue-700">
-            🏥 Mediflow Onboarding
-          </h1>
+          <h1 className="text-2xl font-bold text-blue-700">🏥 Mediflow Onboarding</h1>
           {SwitchLang}
         </div>
-  
 
         <Card className="shadow-xl rounded-2xl">
           {step === 0 ? (
@@ -363,27 +380,13 @@ export default function OnboardingVIJA() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-6 pt-6">
-                {step === 1 && (
-                  <StepPurpose lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
-                {step === 2 && (
-                  <StepVisa lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
-                {step === 3 && (
-                  <StepLocationSalary lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
-                {step === 4 && (
-                  <StepJLPT lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
-                {step === 5 && (
-                  <StepExperience lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
-                {step === 6 && (
-                  <StepHousingStart lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
-                {step === 7 && (
-                  <StepContact lang={lang} T={T} lead={lead} setLead={setLead} />
-                )}
+                {step === 1 && <StepPurpose lang={lang} T={T} lead={lead} setLead={setLead} />}
+                {step === 2 && <StepVisa lang={lang} T={T} lead={lead} setLead={setLead} />}
+                {step === 3 && <StepLocationSalary lang={lang} T={T} lead={lead} setLead={setLead} />}
+                {step === 4 && <StepJLPT lang={lang} T={T} lead={lead} setLead={setLead} />}
+                {step === 5 && <StepExperience lang={lang} T={T} lead={lead} setLead={setLead} />}
+                {step === 6 && <StepHousingStart lang={lang} T={T} lead={lead} setLead={setLead} />}
+                {step === 7 && <StepContact lang={lang} T={T} lead={lead} setLead={setLead} />}
 
                 {/* Nav */}
                 <div className="flex items-center justify-between pt-2">
@@ -423,6 +426,9 @@ export default function OnboardingVIJA() {
             <PlanView lang={lang} T={T} lead={lead} fit={fit} gaps={gaps} onBack={() => setStep(3)} />
           )}
         </Card>
+
+        {/* CTA をページ下部に表示 */}
+        <CTA />
       </div>
     </div>
   );
@@ -439,10 +445,9 @@ function Hero({ lang, T, onStart }: { lang: "ja"|"vi"; T: typeof L["ja"]; onStar
         <p className="text-muted-foreground">{T.heroSub}</p>
       </CardHeader>
       <CardContent className="flex flex-col items-center justify-center gap-4 pb-8">
-      <Button className="bg-green-600 hover:bg-green-700 text-white text-base px-6 py-6 rounded-2xl shadow-md" onClick={onStart}>
-  {T.start}
-</Button>
-
+        <Button className="bg-green-600 hover:bg-green-700 text-white text-base px-6 py-6 rounded-2xl shadow-md" onClick={onStart}>
+          {T.start}
+        </Button>
         <p className="text-xs text-muted-foreground">{T.langToggle}</p>
       </CardContent>
     </>
@@ -473,9 +478,7 @@ function StepVisa({ lang, T, lead, setLead }: any) {
     <div className="space-y-4">
       <Label className="text-sm font-medium">{T.visaLabel}</Label>
       <Select value={lead.visa} onValueChange={(v) => setLead((d: Lead) => ({ ...d, visa: v }))}>
-        <SelectTrigger className="">
-          <SelectValue placeholder="Select" />
-        </SelectTrigger>
+        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="ssw">{T.visaSSW}</SelectItem>
           <SelectItem value="student">{T.visaStudent}</SelectItem>
@@ -493,11 +496,20 @@ function StepLocationSalary({ lang, T, lead, setLead }: any) {
     <div className="grid gap-4">
       <div className="grid gap-2">
         <Label>{T.locationLabel}</Label>
-        <Input value={lead.location} onChange={(e) => setLead((d: Lead) => ({ ...d, location: e.target.value }))} placeholder={lang === "ja" ? "例：横浜市 港北区" : "VD: Yokohama, Kohoku"} />
+        <Input
+          value={lead.location}
+          onChange={(e) => setLead((d: Lead) => ({ ...d, location: e.target.value }))}
+          placeholder={lang === "ja" ? "例：横浜市 港北区" : "VD: Yokohama, Kohoku"}
+        />
       </div>
       <div className="grid gap-2">
         <Label>{T.salaryLabel}</Label>
-        <Input type="number" min={0} step={0.5} value={lead.salaryManYen ?? ""} onChange={(e) => setLead((d: Lead) => ({ ...d, salaryManYen: e.target.value ? Number(e.target.value) : null }))} placeholder={lang === "ja" ? "例：24（万円）" : "VD: 24 (man/tháng)"} />
+        <Input
+          type="number" min={0} step={0.5}
+          value={lead.salaryManYen ?? ""}
+          onChange={(e) => setLead((d: Lead) => ({ ...d, salaryManYen: e.target.value ? Number(e.target.value) : null }))}
+          placeholder={lang === "ja" ? "例：24（万円）" : "VD: 24 (man/tháng)"}
+        />
       </div>
     </div>
   );
@@ -509,9 +521,7 @@ function StepJLPT({ lang, T, lead, setLead }: any) {
     <div className="grid gap-2">
       <Label>{T.jlptLabel}</Label>
       <Select value={lead.jlpt} onValueChange={(v) => setLead((d: Lead) => ({ ...d, jlpt: v }))}>
-        <SelectTrigger>
-          <SelectValue />
-        </SelectTrigger>
+        <SelectTrigger><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="N1">N1</SelectItem>
           <SelectItem value="N2">N2</SelectItem>
@@ -530,7 +540,11 @@ function StepExperience({ lang, T, lead, setLead }: any) {
   return (
     <div className="grid gap-2">
       <Label>{T.expLabel}</Label>
-      <Input type="number" min={0} step={1} value={lead.expMonths} onChange={(e) => setLead((d: Lead) => ({ ...d, expMonths: Number(e.target.value || 0) }))} />
+      <Input
+        type="number" min={0} step={1}
+        value={lead.expMonths}
+        onChange={(e) => setLead((d: Lead) => ({ ...d, expMonths: Number(e.target.value || 0) }))}
+      />
       <div className="flex items-center gap-2 pt-1">
         <Label className="text-sm">{T.nightLabel}</Label>
         <Switch checked={lead.nightShift} onCheckedChange={(v) => setLead((d: Lead) => ({ ...d, nightShift: v }))} />
@@ -546,7 +560,11 @@ function StepHousingStart({ lang, T, lead, setLead }: any) {
     <div className="grid gap-4">
       <div className="grid gap-2">
         <Label>{T.housingLabel}</Label>
-        <RadioGroup value={lead.housing} onValueChange={(v) => setLead((d: Lead) => ({ ...d, housing: v }))} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <RadioGroup
+          value={lead.housing}
+          onValueChange={(v) => setLead((d: Lead) => ({ ...d, housing: v }))}
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+        >
           <RadioOption value="dorm" label={T.housingDorm} />
           <RadioOption value="self" label={T.housingSelf} />
           <RadioOption value="family" label={T.housingFamily} />
@@ -554,7 +572,11 @@ function StepHousingStart({ lang, T, lead, setLead }: any) {
       </div>
       <div className="grid gap-2">
         <Label>{T.startLabel}</Label>
-        <RadioGroup value={lead.startWhen} onValueChange={(v) => setLead((d: Lead) => ({ ...d, startWhen: v }))} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <RadioGroup
+          value={lead.startWhen}
+          onValueChange={(v) => setLead((d: Lead) => ({ ...d, startWhen: v }))}
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+        >
           <RadioOption value="now" label={T.startNow} />
           <RadioOption value="1-3" label={T.start1to3} />
           <RadioOption value="3+" label={T.start3plus} />
@@ -570,35 +592,57 @@ function StepContact({ lang, T, lead, setLead }: any) {
     <div className="grid gap-4">
       <div className="grid gap-2">
         <Label>{T.name}</Label>
-        <Input value={lead.contact.name} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, name: e.target.value } }))} />
+        <Input
+          value={lead.contact.name}
+          onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, name: e.target.value } }))}
+        />
       </div>
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="grid gap-2">
           <Label>{T.email}</Label>
-          <Input type="email" value={lead.contact.email || ""} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, email: e.target.value } }))} />
+          <Input
+            type="email"
+            value={lead.contact.email || ""}
+            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, email: e.target.value } }))}
+          />
         </div>
         <div className="grid gap-2">
           <Label>{T.phone}</Label>
-          <Input value={lead.contact.phone || ""} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, phone: e.target.value } }))} />
+          <Input
+            value={lead.contact.phone || ""}
+            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, phone: e.target.value } }))}
+          />
         </div>
       </div>
       <div className="grid sm:grid-cols-3 gap-4">
         <div className="grid gap-2">
           <Label>{T.line}</Label>
-          <Input value={lead.contact.line || ""} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, line: e.target.value } }))} />
+          <Input
+            value={lead.contact.line || ""}
+            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, line: e.target.value } }))}
+          />
         </div>
         <div className="grid gap-2">
           <Label>{T.messenger}</Label>
-          <Input value={lead.contact.messenger || ""} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, messenger: e.target.value } }))} />
+          <Input
+            value={lead.contact.messenger || ""}
+            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, messenger: e.target.value } }))}
+          />
         </div>
         <div className="grid gap-2">
           <Label>{T.zalo}</Label>
-          <Input value={lead.contact.zalo || ""} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, zalo: e.target.value } }))} />
+          <Input
+            value={lead.contact.zalo || ""}
+            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, zalo: e.target.value } }))}
+          />
         </div>
       </div>
       <div className="grid gap-2">
         <Label>{T.comment}</Label>
-        <Textarea value={lead.contact.comment || ""} onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, comment: e.target.value } }))} />
+        <Textarea
+          value={lead.contact.comment || ""}
+          onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, comment: e.target.value } }))}
+        />
       </div>
     </div>
   );
@@ -696,7 +740,11 @@ function PlanView({ lang, T, lead, fit, gaps, onBack }: any) {
             </Button>
             <Button onClick={async () => {
               try {
-                const res = await fetch("/api/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(lead) });
+                const res = await fetch("/api/lead", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(lead)
+                });
                 console.log("posted:", await res.text());
               } catch (e) { console.warn(e); }
             }}>{T.saveAndSend}</Button>
@@ -714,18 +762,5 @@ function RadioOption({ value, label }: { value: string; label: string; }) {
       <RadioGroupItem value={value} />
       <span>{label}</span>
     </Label>
-  );
-}
-
-import CTA from "../components/CTA";
-
-export default function OnboardingPage() {
-  return (
-    <main className="p-6 bg-white">
-      {/* ここに既存のオンボーディングフォームや説明が入る */}
-      
-      {/* CTAを追加 */}
-      <CTA />
-    </main>
   );
 }
