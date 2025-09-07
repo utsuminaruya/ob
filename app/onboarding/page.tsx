@@ -409,7 +409,7 @@ export default function OnboardingPage() {
 
                 {/* Quick actions */}
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Button variant="outline" size="sm" onClick={copyJSON}>
+                  <Button variant="outline" size="sm" >
                     <Clipboard className="mr-1 h-3 w-3" /> {T.clipboardJSON}
                   </Button>
                   {copied && <span className="text-emerald-600">{T.copied}</span>}
