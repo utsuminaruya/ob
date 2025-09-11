@@ -1,779 +1,490 @@
-'use client';
+'use client'
 
-import React, { useMemo, useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
-import { Check, ChevronLeft, ChevronRight, Clipboard, Loader2 } from "lucide-react";
-import SiteHeader from "@/components/SiteHeader";
-import SiteFooter from "@/components/SiteFooter";
+// app/onboarding/page.tsx
+// v3.1（事業者用を削除／求職者のみ）
+// 依存: React + TailwindCSS。shadcn不要。
+// 送信先: /api/lead にPOST。未実装時はlocalStorageへフォールバック。
+// 完了後: 候補者情報から おすすめ求人／日本語学習／生活情報 を自動提示。
 
-// ========================
-// 30秒オンボーディングBOT（VI/JA） - 単一ファイルMVP
-// ========================
+import React, { useEffect, useMemo, useState } from 'react'
 
-// ---- 言語辞書 ----
-const L = {
+type Lang = 'ja' | 'vi'
+
+type CandidateForm = {
+  name: string
+  lang: Lang
+  country?: string
+  jlpt?: 'N1' | 'N2' | 'N3' | 'N4' | 'N5' | 'None'
+  visa?: 'SSW' | 'Student' | 'TraineeGraduated' | 'Permanent' | 'Other'
+  prefecture?: string
+  desiredArea?: string
+  contactMethod: 'LINE' | 'Messenger' | 'Email'
+  contactId: string
+}
+
+type Job = {
+  id: string
+  title: string
+  facility: string
+  prefecture: string
+  jlptMin: 'N1'|'N2'|'N3'|'N4'|'N5'|'None'
+  visas: Array<CandidateForm['visa']>
+  housing?: boolean
+  nightShift?: boolean
+  link?: string
+}
+
+const LINKS = {
+  lineCandidate: 'https://lin.ee/xUocVyI',
+  messenger: 'https://www.facebook.com/MediflowKK',
+}
+
+const JP_PREFS = [
+  '北海道','青森','岩手','宮城','秋田','山形','福島','茨城','栃木','群馬','埼玉','千葉','東京','神奈川','新潟','富山','石川','福井','山梨','長野','岐阜','静岡','愛知','三重','滋賀','京都','大阪','兵庫','奈良','和歌山','鳥取','島根','岡山','広島','山口','徳島','香川','愛媛','高知','福岡','佐賀','長崎','熊本','大分','宮崎','鹿児島','沖縄'
+]
+
+// デモ用の簡易データセット（実運用ではAPIやDBに置換）
+const JOBS: Job[] = [
+  { id:'tokyo1', title:'介護職（特定技能）', facility:'特別養護老人ホーム・板橋', prefecture:'東京', jlptMin:'N4', visas:['SSW'], housing:true },
+  { id:'tokyo2', title:'介護職（通所・日勤）', facility:'デイサービス・大田', prefecture:'東京', jlptMin:'N4', visas:['SSW','Student'] },
+  { id:'kanagawa1', title:'介護職（老健・夜勤あり）', facility:'介護老人保健施設・横浜', prefecture:'神奈川', jlptMin:'N3', visas:['SSW','Student'], nightShift:true },
+  { id:'saitama1', title:'介護職（グループホーム）', facility:'川口市内', prefecture:'埼玉', jlptMin:'N4', visas:['SSW'] },
+  { id:'chiba1', title:'介護職（病院・病棟助手）', facility:'船橋市内病院', prefecture:'千葉', jlptMin:'N3', visas:['SSW','TraineeGraduated'] },
+]
+
+const i18n: Record<Lang, any> = {
   ja: {
-    heroTitle: "日本で “働く” と “暮らす” を同時に。",
-    heroSub: "30秒であなたに合う進路と求人・学習・生活プランを提案します。",
-    start: "30秒で開始",
-    next: "次へ",
-    back: "戻る",
-    submit: "プランを作成",
-    copied: "コピーしました",
-    download: "JSONをコピー",
-    saveAndSend: "送信（/api/lead）",
-    planTitle: "あなた専用の進路プラン",
-    planSub: "不足要件の見える化 → 今すぐ埋めるアクション",
-    step1: "目的",
-    step2: "在留資格",
-    step3: "勤務地",
-    step4: "日本語レベル",
-    step5: "介護経験",
-    step6: "住まい・希望",
-    step7: "連絡先",
-    purposeLabel: "何を一番したいですか？",
-    purposeJob: "仕事を探す",
-    purposeStudy: "日本語を学ぶ",
-    purposeLife: "生活サポート",
-    visaLabel: "現在の在留資格",
-    visaSSW: "特定技能",
-    visaStudent: "留学",
-    visaLT: "定住者/家族滞在など",
-    visaNA: "なし/海外",
-    jlptLabel: "日本語レベル (JLPT)",
-    none: "未取得",
-    expLabel: "介護の経験（月）",
-    nightLabel: "夜勤は可能ですか？",
-    yes: "はい",
-    no: "いいえ",
-    locationLabel: "働きたいエリア（市区/都道府県可）",
-    salaryLabel: "希望月給（万円）",
-    housingLabel: "住まい",
-    housingDorm: "会社寮希望",
-    housingSelf: "自分で探す",
-    housingFamily: "家族と同居",
-    startLabel: "いつから働けますか？",
-    startNow: "すぐに",
-    start1to3: "1〜3ヶ月以内",
-    start3plus: "3ヶ月以降",
-    contactLabel: "連絡先",
-    name: "氏名",
-    email: "メール",
-    phone: "電話/WhatsApp",
-    line: "LINE ID",
-    messenger: "Messenger",
-    zalo: "Zalo",
-    comment: "補足（任意）",
-    planBlocks: {
-      fit: "適合度",
-      visa: "ビザ/要件",
-      study: "学習プラン",
-      life: "生活セット",
-      actions: "今すぐのアクション"
+    title: '30秒オンボーディング',
+    subtitle: '最短30秒で必要情報だけ。すぐにマッチへ。',
+    steps: {
+      basics: '基本情報',
+      detail: '詳細',
+      location: 'エリア',
+      contact: '連絡方法',
+      review: '確認',
     },
-    sampleJobsTitle: "おすすめ求人（サンプル）",
-    sampleLifeTitle: "生活情報（横浜の例）",
-    clipboardJSON: "候補者データ(JSON)をコピー",
-    langToggle: "言語：日本語 / Tiếng Việt",
-    progress: "進捗",
+    labels: {
+      name: 'お名前',
+      lang: '希望言語',
+      country: '出身国（任意）',
+      jlpt: '日本語レベル',
+      visa: '在留資格',
+      prefecture: '都道府県',
+      desiredArea: '希望エリア（任意）',
+      contactMethod: '連絡手段',
+      contactId: '連絡先ID / メール',
+    },
+    options: {
+      lang: { ja: '日本語', vi: 'ベトナム語' },
+      jlpt: ['N1','N2','N3','N4','N5','None'],
+      visa: {
+        SSW: '特定技能',
+        Student: '留学',
+        TraineeGraduated: '技能実習修了',
+        Permanent: '永住/定住',
+        Other: 'その他'
+      },
+      contact: { LINE: 'LINE', Messenger: 'Messenger', Email: 'メール' }
+    },
+    cta: {
+      candidateLine: '📲 LINEで登録（求職者）',
+      messenger: '💬 Messengerで相談',
+    },
+    buttons: { next: '次へ', back: '戻る', submit: '送信', edit: '修正', start: 'はじめる' },
+    meta: {
+      timeHint: '目安: 30秒',
+      privacy: '送信データは採用・紹介目的にのみ利用します。',
+      sent: '送信しました。あなたに合わせたおすすめを表示します。',
+      savedLocal: '（API未設定のため端末に一時保存しました）',
+    },
+    recs: {
+      headerJobs: 'あなたへのおすすめ求人',
+      headerStudy: 'おすすめ日本語学習',
+      headerLife: '生活情報のヒント',
+      apply: '応募・相談',
+      seeMore: '詳細を見る',
+      night: '夜勤あり',
+      housing: '住居サポートあり',
+    }
   },
   vi: {
-    heroTitle: "Vừa LÀM VIỆC vừa SỐNG TỐT tại Nhật.",
-    heroSub: "Trong 30 giây, nhận lộ trình phù hợp cùng việc làm, học tập và đời sống.",
-    start: "Bắt đầu trong 30 giây",
-    next: "Tiếp tục",
-    back: "Quay lại",
-    submit: "Tạo kế hoạch",
-    copied: "Đã sao chép",
-    download: "Sao chép JSON",
-    saveAndSend: "Gửi (/api/lead)",
-    planTitle: "Kế hoạch dành riêng cho bạn",
-    planSub: "Hiển thị thiếu sót → Hành động bù ngay",
-    step1: "Mục tiêu",
-    step2: "Tư cách lưu trú",
-    step3: "Khu vực làm việc",
-    step4: "Trình độ tiếng Nhật",
-    step5: "Kinh nghiệm điều dưỡng",
-    step6: "Nhà ở & Nguyện vọng",
-    step7: "Liên hệ",
-    purposeLabel: "Bạn ưu tiên điều gì?",
-    purposeJob: "Tìm việc",
-    purposeStudy: "Học tiếng Nhật",
-    purposeLife: "Hỗ trợ đời sống",
-    visaLabel: "Tư cách hiện tại",
-    visaSSW: "Kỹ năng đặc định (SSW)",
-    visaStudent: "Du học",
-    visaLT: "Định trú/Gia đình v.v.",
-    visaNA: "Chưa có/Ở nước ngoài",
-    jlptLabel: "Trình độ JLPT",
-    none: "Chưa có",
-    expLabel: "Kinh nghiệm chăm sóc (tháng)",
-    nightLabel: "Có thể trực đêm?",
-    yes: "Có",
-    no: "Không",
-    locationLabel: "Khu vực muốn làm (TP/Quận)",
-    salaryLabel: "Lương mong muốn (vạn yên/tháng)",
-    housingLabel: "Nhà ở",
-    housingDorm: "Muốn ký túc xá công ty",
-    housingSelf: "Tự tìm nhà",
-    housingFamily: "Ở cùng gia đình",
-    startLabel: "Khi nào có thể bắt đầu?",
-    startNow: "Ngay lập tức",
-    start1to3: "Trong 1–3 tháng",
-    start3plus: "Sau 3 tháng",
-    contactLabel: "Liên hệ",
-    name: "Họ tên",
-    email: "Email",
-    phone: "Điện thoại/WhatsApp",
-    line: "LINE ID",
-    messenger: "Messenger",
-    zalo: "Zalo",
-    comment: "Ghi chú (tuỳ chọn)",
-    planBlocks: {
-      fit: "Mức độ phù hợp",
-      visa: "Visa/Yêu cầu",
-      study: "Kế hoạch học",
-      life: "Gói đời sống",
-      actions: "Hành động ngay"
+    title: 'Onboarding 30 giây',
+    subtitle: 'Chỉ ~30s thông tin cần thiết để kết nối việc nhanh.',
+    steps: { basics:'Cơ bản', detail:'Chi tiết', location:'Khu vực', contact:'Liên hệ', review:'Xác nhận' },
+    labels: {
+      name: 'Họ tên', lang: 'Ngôn ngữ', country: 'Quốc tịch (tùy chọn)', jlpt: 'Trình độ tiếng Nhật', visa: 'Tư cách lưu trú',
+      prefecture: 'Tỉnh/TP', desiredArea: 'Khu vực mong muốn (tùy chọn)', contactMethod: 'Cách liên hệ', contactId: 'ID liên hệ / Email'
     },
-    sampleJobsTitle: "Việc làm gợi ý (mẫu)",
-    sampleLifeTitle: "Thông tin đời sống (ví dụ Yokohama)",
-    clipboardJSON: "Sao chép dữ liệu ứng viên (JSON)",
-    langToggle: "Ngôn ngữ: 日本語 / Tiếng Việt",
-    progress: "Tiến độ",
-  },
-} as const;
-
-// ---- 型 ----
-interface Lead {
-  purpose: "job" | "study" | "life" | "multi";
-  visa: "ssw" | "student" | "lt" | "na";
-  jlpt: "N1" | "N2" | "N3" | "N4" | "N5" | "none";
-  expMonths: number;
-  nightShift: boolean;
-  location: string;
-  salaryManYen: number | null;
-  housing: "dorm" | "self" | "family";
-  startWhen: "now" | "1-3" | "3+";
-  contact: {
-    name: string;
-    email?: string;
-    phone?: string;
-    line?: string;
-    messenger?: string;
-    zalo?: string;
-    comment?: string;
-  };
-  meta: {
-    lang: "ja" | "vi";
-    createdAt: string;
-    utm?: Record<string, string | undefined>;
-  };
-}
-
-const defaultLead: Lead = {
-  purpose: "job",
-  visa: "na",
-  jlpt: "none",
-  expMonths: 0,
-  nightShift: false,
-  location: "",
-  salaryManYen: null,
-  housing: "dorm",
-  startWhen: "now",
-  contact: { name: "" },
-  meta: { lang: "ja", createdAt: new Date().toISOString() },
-};
-
-// ---- ユーティリティ ----
-function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
-
-function computeFitScore(lead: Lead) {
-  let score = 0;
-  const jlptMap: Record<Lead["jlpt"], number> = { N1: 100, N2: 85, N3: 70, N4: 50, N5: 30, none: 10 };
-  score += jlptMap[lead.jlpt] * 0.45;
-  score += clamp(lead.expMonths / 24, 0, 1) * 100 * 0.35; // 2年で満点
-  score += (lead.nightShift ? 1 : 0) * 100 * 0.1;
-  score += (lead.location ? 1 : 0) * 100 * 0.1;
-  return Math.round(score);
-}
-
-function requirementsGap(lead: Lead) {
-  const gaps: string[] = [];
-  if (lead.jlpt === "none" || lead.jlpt === "N5") gaps.push("JLPT N4 取得を目指す（語彙・読解・聴解を毎日5分）");
-  if (lead.jlpt === "N4") gaps.push("N3に向けた敬語・医療用語を強化（面接想定Q&A付き）");
-  if (lead.expMonths < 6) gaps.push("介護現場のOJTまたはボランティア経験を6ヶ月目安で確保");
-  if (!lead.location) gaps.push("勤務希望エリアを1つ以上選択（通勤60分内）");
-  return gaps;
-}
-
-function studyPlan(lead: Lead, lang: "ja"|"vi") {
-  const ja = [
-    "毎日5分：介護の敬語フレーズ（声かけ/報告）",
-    "用語ブースター：バイタル・体位変換・食事介助",
-    "録音スピーキング→AIフィードバック（週2回）",
-  ];
-  const vi = [
-    "5 phút mỗi ngày: kính ngữ trong chăm sóc (gọi hỏi/báo cáo)",
-    "Từ vựng: dấu hiệu sinh tồn, đổi tư thế, hỗ trợ ăn uống",
-    "Ghi âm nói → phản hồi AI (2 lần/tuần)",
-  ];
-  const base = lang === "ja" ? ja : vi;
-  if (lead.jlpt === "none" || lead.jlpt === "N5") base.unshift(lang === "ja" ? "ひらがな/かたかな＋基本文型（各5分）" : "Hiragana/Katakana + mẫu câu cơ bản (mỗi ngày 5 phút)");
-  return base;
-}
-
-function actionList(lead: Lead, lang: "ja"|"vi") {
-  const list_ja = [
-    "面談を予約（履歴書・在留カードの写真を用意）",
-    "LINEで質問：夜勤可否・寮の希望を伝える",
-    "学習ハブに参加して今日の5分課題を完了",
-  ];
-  const list_vi = [
-    "Đặt lịch phỏng vấn (chuẩn bị ảnh thẻ cư trú & sơ yếu lý lịch)",
-    "Hỏi trên LINE: ca đêm có thể/không & mong muốn ký túc xá",
-    "Vào học liệu và hoàn thành nhiệm vụ 5 phút hôm nay",
-  ];
-  return (lang === "ja" ? list_ja : list_vi);
-}
-
-function sampleJobs(lang: "ja"|"vi") {
-  const ja = [
-    { name: "特養（横浜市港北区）", salary: "月給23–28万円", visa: "SSW可", house: "寮あり", note: "夜勤2回/月から相談" },
-    { name: "老健（川崎市中原区）", salary: "月給24–30万円", visa: "SSW/留学切替可", house: "住宅手当", note: "日本語サポート有" },
-    { name: "有料（町田市）", salary: "月給22–27万円", visa: "SSW可", house: "寮/社宅", note: "駅徒歩8分" },
-  ];
-  const vi = [
-    { name: "Viện dưỡng lão (Kohoku, Yokohama)", salary: "23–28 man/tháng", visa: "Hỗ trợ SSW", house: "Ký túc xá", note: "Có thể trực đêm 2 lần/tháng" },
-    { name: "Cơ sở phục hồi (Nakahara, Kawasaki)", salary: "24–30 man/tháng", visa: "SSW/Chuyển từ du học", house: "Trợ cấp nhà ở", note: "Có hỗ trợ tiếng Nhật" },
-    { name: "Viện chăm sóc (Machida)", salary: "22–27 man/tháng", visa: "SSW", house: "KTX/nhà công ty", note: "8 phút đi bộ từ ga" },
-  ];
-  return (lang === "ja" ? ja : vi);
-}
-
-function sampleLife(lang: "ja"|"vi") {
-  const ja = [
-    { title: "家賃相場", body: "ワンルーム相場：6.0–7.5万円/月（港北区例）" },
-    { title: "通勤例", body: "日吉→現場：東急線20分＋徒歩5分" },
-    { title: "ベトナム食材", body: "ベトナムスーパー（綱島/菊名周辺）" },
-    { title: "医療・役所", body: "日本語×ベトナム語可の病院/区役所の案内リンク" },
-  ];
-  const vi = [
-    { title: "Giá thuê", body: "Phòng 1 người: 6.0–7.5 man/tháng (ví dụ Kohoku)" },
-    { title: "Đi lại", body: "Hiyoshi → cơ sở: 20 phút tàu + 5 phút đi bộ" },
-    { title: "Thực phẩm VN", body: "Siêu thị VN (khu Tsurumai/Kikuna)" },
-    { title: "Y tế & Hành chính", body: "Bệnh viện/UBND hỗ trợ tiếng Nhật–Việt (link)" },
-  ];
-  return (lang === "ja" ? ja : vi);
-}
-
-// ---- CTA（同一ファイル内）----
-function CTA() {
-  return (
-    <div className="mt-8 rounded-2xl border p-6 bg-gradient-to-br from-sky-50 to-blue-50 shadow">
-      <h2 className="text-xl font-bold text-blue-800">無料相談・求人紹介を希望しますか？</h2>
-      <p className="text-sm text-blue-700/80 mt-1">
-        LINEやMessengerで、ビザ相談から学習プランまで担当者がすぐに返信します。
-      </p>
-      <div className="mt-4 flex flex-col sm:flex-row gap-3">
-        <a
-          href="https://lin.ee/"
-          target="_blank"
-          className="inline-flex items-center justify-center rounded-xl px-5 py-3 bg-emerald-600 text-white hover:bg-emerald-700"
-        >
-          LINEで相談する
-        </a>
-        <a
-          href="https://m.me/"
-          target="_blank"
-          className="inline-flex items-center justify-center rounded-xl px-5 py-3 border hover:bg-white/60"
-        >
-          Messengerで相談する
-        </a>
-      </div>
-    </div>
-  );
-}
-
-// ---- ページ本体（唯一の default export）----
-export default function OnboardingPage() {
-  const [lang, setLang] = useState<"ja"|"vi">("ja");
-  const T = L[lang];
-  const [step, setStep] = useState(0); // 0: hero, 1..7: form, 8: plan
-  const [lead, setLead] = useState<Lead>(() => {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem("_onb_lead") : null;
-    if (saved) {
-      try { return JSON.parse(saved) as Lead; } catch (_) {}
+    options: {
+      lang: { ja: 'Tiếng Nhật', vi: 'Tiếng Việt' },
+      jlpt: ['N1','N2','N3','N4','N5','None'],
+      visa: { SSW:'Kỹ năng đặc định', Student:'Du học', TraineeGraduated:'TTS đã tốt nghiệp', Permanent:'Vĩnh trú/Định trú', Other:'Khác' },
+      contact: { LINE: 'LINE', Messenger: 'Messenger', Email: 'Email' }
+    },
+    cta: { candidateLine:'📲 Đăng ký LINE (Ứng viên)', messenger:'💬 Hỏi qua Messenger' },
+    buttons: { next:'Tiếp', back:'Quay lại', submit:'Gửi', edit:'Sửa', start:'Bắt đầu' },
+    meta: { timeHint:'~30s', privacy:'Chỉ dùng cho mục đích tuyển dụng/giới thiệu.', sent:'Đã gửi. Gợi ý phù hợp sẽ hiển thị.', savedLocal:'(Lưu tạm trên máy; chưa cấu hình API)' },
+    recs: {
+      headerJobs: 'Việc làm gợi ý cho bạn',
+      headerStudy: 'Gợi ý học tiếng Nhật',
+      headerLife: 'Mẹo cuộc sống tại Nhật',
+      apply: 'Hỏi/Ứng tuyển',
+      seeMore: 'Xem chi tiết',
+      night: 'Có ca đêm',
+      housing: 'Có hỗ trợ nhà ở',
     }
-    return defaultLead;
-  });
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  }
+}
+
+function useCountdown(seconds: number) {
+  const [remain, setRemain] = useState(seconds)
+  useEffect(() => {
+    setRemain(seconds)
+    const t = setInterval(() => setRemain((r) => (r > 0 ? r - 1 : 0)), 1000)
+    return () => clearInterval(t)
+  }, [seconds])
+  return remain
+}
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="h-full bg-blue-600 transition-all" style={{ width: `${value}%` }} />
+    </div>
+  )
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">{children}</span>
+}
+
+function jlptRank(level?: CandidateForm['jlpt']) {
+  const order = { None:0, N5:1, N4:2, N3:3, N2:4, N1:5 } as const
+  return level ? order[level] : 0
+}
+
+function matchJob(job: Job, f: CandidateForm) {
+  const areaOk = f.prefecture ? job.prefecture === f.prefecture : true
+  const wantAreaOk = f.desiredArea ? (job.prefecture.includes(f.desiredArea) || f.desiredArea.includes(job.prefecture)) : true
+  const jlptOk = jlptRank(f.jlpt) >= jlptRank(job.jlptMin)
+  const visaOk = f.visa ? job.visas.includes(f.visa) : true
+  return areaOk && wantAreaOk && jlptOk && visaOk
+}
+
+function getJobRecs(f: CandidateForm): Job[] {
+  const matched = JOBS.filter((j) => matchJob(j, f))
+  if (matched.length > 0) return matched.slice(0, 3)
+  // フォールバック: 首都圏から人気順に3件
+  const metro = JOBS.filter((j) => ['東京','神奈川','埼玉','千葉'].includes(j.prefecture))
+  return metro.slice(0, 3)
+}
+
+function getStudyRecs(f: CandidateForm, langPack: any) {
+  const isLower = jlptRank(f.jlpt) <= jlptRank('N4')
+  const isMid = jlptRank(f.jlpt) === jlptRank('N3')
+  const isHigh = jlptRank(f.jlpt) >= jlptRank('N2')
+  const JA = langPack === i18n.ja
+  return [
+    isLower && {
+      title: JA ? '介護の日本語・基礎（敬語／声かけ）' : 'Tiếng Nhật trong chăm sóc cơ bản',
+      tip: JA ? '毎日15分の音読＋シャドーイング。数字・時間・身体部位を固める。' : 'Đọc to + shadowing 15 phút/ngày. Ôn số, thời gian, bộ phận cơ thể.'
+    },
+    isMid && {
+      title: JA ? 'JLPT N3 語彙＋聴解ブースト' : 'Tăng tốc từ vựng + nghe N3',
+      tip: JA ? '通勤中に短いニュース音声→要約1文を書く習慣。' : 'Nghe tin ngắn khi di chuyển → viết 1 câu tóm tắt.'
+    },
+    isHigh && {
+      title: JA ? '介護記録の表現テンプレ' : 'Mẫu câu viết hồ sơ chăm sóc',
+      tip: JA ? 'SOAP/ADLの定型文を暗記→現場で置換。' : 'Ghi nhớ mẫu SOAP/ADL và thay nội dung tại chỗ.'
+    }
+  ].filter(Boolean) as Array<{title:string; tip:string}>
+}
+
+function getLifeRecs(f: CandidateForm, langPack: any) {
+  const JA = langPack === i18n.ja
+  const p = f.prefecture || '東京'
+  return [
+    { title: JA ? '初期手続きチェック' : 'Thủ tục ban đầu', tip: JA ? '住民登録→国民健康保険→マイナンバー→銀行→携帯SIM。' : 'Đăng ký cư trú→BHYT quốc dân→MyNumber→ngân hàng→SIM.' },
+    { title: JA ? `${p}での交通ICカード` : `Thẻ IC giao thông tại ${p}`, tip: JA ? 'Suica/PASMO等をスマホに入れて通勤を時短。' : 'Nạp Suica/PASMO vào điện thoại để tiết kiệm thời gian.' },
+    { title: JA ? '家計の安心' : 'An tâm tài chính', tip: JA ? '家賃は手取りの30%以下を目安。送金は手数料の低い方法を選ぶ。' : 'Tiền nhà ≤30% thu nhập. Chọn cách chuyển tiền phí thấp.' },
+  ]
+}
+
+export default function OnboardingPage() {
+  const [lang, setLang] = useState<Lang>('ja')
+  const t = i18n[lang]
+  const [step, setStep] = useState(0)
+  const [form, setForm] = useState<CandidateForm | null>({ name:'', lang, contactMethod:'LINE', contactId:'' })
+  const remain = useCountdown(30)
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("_onb_lead", JSON.stringify(lead));
-    }
-  }, [lead]);
+    // 初期言語を推定（vi/jaのみ）
+    const n = navigator?.language?.toLowerCase() || ''
+    if (n.startsWith('vi')) setLang('vi')
+    else setLang('ja')
+  }, [])
 
-  const progress = useMemo(() => Math.round((clamp(step, 0, 8) / 8) * 100), [step]);
-  const fit = useMemo(() => computeFitScore(lead), [lead]);
-  const gaps = useMemo(() => requirementsGap(lead), [lead]);
+  const totalSteps = 4 // 0..4: basics, detail, location, contact, review
+  const progress = useMemo(() => Math.min(100, Math.round((step / totalSteps) * 100)), [step, totalSteps])
 
-  async function submitLead() {
-    setLoading(true);
+  function next() { setStep((s) => Math.min(totalSteps, s + 1)) }
+  function back() { setStep((s) => Math.max(0, s - 1)) }
+
+  function update<K extends keyof CandidateForm>(key: K, value: CandidateForm[K]) {
+    setForm((prev) => ({ ...(prev || { name:'', lang, contactMethod:'LINE', contactId:'' }), [key]: value }))
+  }
+
+  async function submit() {
+    if (!form) return
+    const payload = { ...form, lang }
     try {
-      const payload = { ...lead, meta: { ...lead.meta, lang, createdAt: new Date().toISOString() } };
-      await fetch("/api/lead", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch('/api/lead', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      })
+      if (!res.ok) throw new Error('Bad status')
+      localStorage.removeItem('onboarding_v3_candidate')
+      setStep(totalSteps + 1)
+      return
     } catch (e) {
-      console.warn("/api/lead post failed", e);
-    } finally {
-      setLoading(false);
-      setStep(8);
+      localStorage.setItem('onboarding_v3_candidate', JSON.stringify(payload))
+      setStep(totalSteps + 1)
     }
   }
 
-  const SwitchLang = (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      <span>{T.langToggle}</span>
-      <Switch checked={lang === "vi"} onCheckedChange={(v) => setLang(v ? "vi" : "ja")} />
-      <span className="font-medium">{lang === "ja" ? "VI" : "JA"}</span>
+  const StepHeader = (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-sky-500 bg-clip-text text-transparent">{t.title}</h1>
+        <p className="text-sm text-gray-600 mt-1">{t.subtitle}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <select className="text-sm border rounded-lg px-2 py-1" value={lang} onChange={(e) => { const L = e.target.value as Lang; setLang(L); update('lang', L) }}>
+          <option value="ja">{t.options.lang.ja}</option>
+          <option value="vi">{t.options.lang.vi}</option>
+        </select>
+        <Pill>{t.meta.timeHint}</Pill>
+        <div className="text-sm text-gray-500 w-14 text-right">{remain}s</div>
+      </div>
     </div>
-  );
+  )
+
+  const langPack = i18n[lang]
+  const jobRecs = form ? getJobRecs(form) : []
+  const studyRecs = form ? getStudyRecs(form, langPack) : []
+  const lifeRecs = form ? getLifeRecs(form, langPack) : []
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 to-white py-8 px-4 sm:px-8">
-      <div className="mx-auto max-w-3xl">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-blue-700">🏥 Mediflow Onboarding</h1>
-          {SwitchLang}
-        </div>
+    <div className="min-h-[100svh] flex items-center justify-center bg-gradient-to-b from-white to-slate-50">
+      <div className="w-full max-w-2xl p-4 md:p-8">
+        {StepHeader}
+        <div className="mt-4"><ProgressBar value={progress} /></div>
 
-        <Card className="shadow-xl rounded-2xl">
-          {step === 0 ? (
-            <Hero lang={lang} T={T} onStart={() => setStep(1)} />
-          ) : step <= 7 ? (
-            <>
-              <CardHeader className="pb-0">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xl">{T.progress}: {progress}%</CardTitle>
-                  <Progress value={progress} className="w-40" />
+        <div className="mt-6 bg-white rounded-2xl shadow-sm border p-4 md:p-6">
+          {/* STEP 0: BASICS */}
+          {step === 0 && form && (
+            <div>
+              <div className="text-sm text-gray-500 mb-2">STEP 1/5 · {t.steps.basics}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.name}</label>
+                  <input className="w-full border rounded-xl px-3 py-2" placeholder="山田 太郎 / Nguyen Van A" value={form.name}
+                    onChange={(e) => update('name', e.target.value)} />
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-6 pt-6">
-                {step === 1 && <StepPurpose lang={lang} T={T} lead={lead} setLead={setLead} />}
-                {step === 2 && <StepVisa lang={lang} T={T} lead={lead} setLead={setLead} />}
-                {step === 3 && <StepLocationSalary lang={lang} T={T} lead={lead} setLead={setLead} />}
-                {step === 4 && <StepJLPT lang={lang} T={T} lead={lead} setLead={setLead} />}
-                {step === 5 && <StepExperience lang={lang} T={T} lead={lead} setLead={setLead} />}
-                {step === 6 && <StepHousingStart lang={lang} T={T} lead={lead} setLead={setLead} />}
-                {step === 7 && <StepContact lang={lang} T={T} lead={lead} setLead={setLead} />}
-
-                {/* Nav */}
-                <div className="flex items-center justify-between pt-2">
-                  <Button variant="ghost" onClick={() => setStep((s) => clamp(s - 1, 0, 8))}>
-                    <ChevronLeft className="mr-1 h-4 w-4" /> {T.back}
-                  </Button>
-
-                  {step < 7 ? (
-                    <Button onClick={() => setStep((s) => clamp(s + 1, 0, 8))}>
-                      {T.next} <ChevronRight className="ml-1 h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button onClick={submitLead} disabled={loading}>
-                      {loading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {T.submit}
-                        </>
-                      ) : (
-                        <>
-                          <Check className="mr-2 h-4 w-4" /> {T.submit}
-                        </>
-                      )}
-                    </Button>
-                  )}
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.lang}</label>
+                  <select className="w-full border rounded-xl px-3 py-2" value={lang} onChange={(e) => { const L = e.target.value as Lang; setLang(L); update('lang', L) }}>
+                    <option value="ja">{t.options.lang.ja}</option>
+                    <option value="vi">{t.options.lang.vi}</option>
+                  </select>
                 </div>
-
-                {/* Quick actions */}
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Button variant="outline" size="sm" >
-                    <Clipboard className="mr-1 h-3 w-3" /> {T.clipboardJSON}
-                  </Button>
-                  {copied && <span className="text-emerald-600">{T.copied}</span>}
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.country}</label>
+                  <input className="w-full border rounded-xl px-3 py-2" placeholder="Vietnam / Philippines / Indonesia ..."
+                    onChange={(e) => update('country', e.target.value)} />
                 </div>
-              </CardContent>
-            </>
-          ) : (
-            <PlanView lang={lang} T={T} lead={lead} fit={fit} gaps={gaps} onBack={() => setStep(3)} />
-          )}
-        </Card>
-
-        {/* CTA をページ下部に表示 */}
-        <CTA />
-      </div>
-    </div>
-  );
-}
-
-// ---- Hero ----
-function Hero({ lang, T, onStart }: { lang: "ja"|"vi"; T: typeof L["ja"]; onStart: () => void; }) {
-  return (
-    <>
-      <CardHeader className="text-center space-y-2 pt-8">
-        <CardTitle className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-          {T.heroTitle}
-        </CardTitle>
-        <p className="text-muted-foreground">{T.heroSub}</p>
-      </CardHeader>
-      <CardContent className="flex flex-col items-center justify-center gap-4 pb-8">
-        <Button className="bg-green-600 hover:bg-green-700 text-white text-base px-6 py-6 rounded-2xl shadow-md" onClick={onStart}>
-          {T.start}
-        </Button>
-        <p className="text-xs text-muted-foreground">{T.langToggle}</p>
-      </CardContent>
-    </>
-  );
-}
-
-// ---- Step 1: Purpose ----
-function StepPurpose({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="space-y-4">
-      <Label className="text-sm font-medium">{T.purposeLabel}</Label>
-      <RadioGroup
-        value={lead.purpose}
-        onValueChange={(v) => setLead((d: Lead) => ({ ...d, purpose: v }))}
-        className="grid grid-cols-1 sm:grid-cols-3 gap-3"
-      >
-        <RadioOption value="job" label={T.purposeJob} />
-        <RadioOption value="study" label={T.purposeStudy} />
-        <RadioOption value="life" label={T.purposeLife} />
-      </RadioGroup>
-    </div>
-  );
-}
-
-// ---- Step 2: Visa ----
-function StepVisa({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="space-y-4">
-      <Label className="text-sm font-medium">{T.visaLabel}</Label>
-      <Select value={lead.visa} onValueChange={(v) => setLead((d: Lead) => ({ ...d, visa: v }))}>
-        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="ssw">{T.visaSSW}</SelectItem>
-          <SelectItem value="student">{T.visaStudent}</SelectItem>
-          <SelectItem value="lt">{T.visaLT}</SelectItem>
-          <SelectItem value="na">{T.visaNA}</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-// ---- Step 3: Location & Salary ----
-function StepLocationSalary({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-2">
-        <Label>{T.locationLabel}</Label>
-        <Input
-          value={lead.location}
-          onChange={(e) => setLead((d: Lead) => ({ ...d, location: e.target.value }))}
-          placeholder={lang === "ja" ? "例：横浜市 港北区" : "VD: Yokohama, Kohoku"}
-        />
-      </div>
-      <div className="grid gap-2">
-        <Label>{T.salaryLabel}</Label>
-        <Input
-          type="number" min={0} step={0.5}
-          value={lead.salaryManYen ?? ""}
-          onChange={(e) => setLead((d: Lead) => ({ ...d, salaryManYen: e.target.value ? Number(e.target.value) : null }))}
-          placeholder={lang === "ja" ? "例：24（万円）" : "VD: 24 (man/tháng)"}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ---- Step 4: JLPT ----
-function StepJLPT({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="grid gap-2">
-      <Label>{T.jlptLabel}</Label>
-      <Select value={lead.jlpt} onValueChange={(v) => setLead((d: Lead) => ({ ...d, jlpt: v }))}>
-        <SelectTrigger><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="N1">N1</SelectItem>
-          <SelectItem value="N2">N2</SelectItem>
-          <SelectItem value="N3">N3</SelectItem>
-          <SelectItem value="N4">N4</SelectItem>
-          <SelectItem value="N5">N5</SelectItem>
-          <SelectItem value="none">{T.none}</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-// ---- Step 5: Experience ----
-function StepExperience({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="grid gap-2">
-      <Label>{T.expLabel}</Label>
-      <Input
-        type="number" min={0} step={1}
-        value={lead.expMonths}
-        onChange={(e) => setLead((d: Lead) => ({ ...d, expMonths: Number(e.target.value || 0) }))}
-      />
-      <div className="flex items-center gap-2 pt-1">
-        <Label className="text-sm">{T.nightLabel}</Label>
-        <Switch checked={lead.nightShift} onCheckedChange={(v) => setLead((d: Lead) => ({ ...d, nightShift: v }))} />
-        <span className="text-xs text-muted-foreground">{lead.nightShift ? T.yes : T.no}</span>
-      </div>
-    </div>
-  );
-}
-
-// ---- Step 6: Housing & Start ----
-function StepHousingStart({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-2">
-        <Label>{T.housingLabel}</Label>
-        <RadioGroup
-          value={lead.housing}
-          onValueChange={(v) => setLead((d: Lead) => ({ ...d, housing: v }))}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
-        >
-          <RadioOption value="dorm" label={T.housingDorm} />
-          <RadioOption value="self" label={T.housingSelf} />
-          <RadioOption value="family" label={T.housingFamily} />
-        </RadioGroup>
-      </div>
-      <div className="grid gap-2">
-        <Label>{T.startLabel}</Label>
-        <RadioGroup
-          value={lead.startWhen}
-          onValueChange={(v) => setLead((d: Lead) => ({ ...d, startWhen: v }))}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
-        >
-          <RadioOption value="now" label={T.startNow} />
-          <RadioOption value="1-3" label={T.start1to3} />
-          <RadioOption value="3+" label={T.start3plus} />
-        </RadioGroup>
-      </div>
-    </div>
-  );
-}
-
-// ---- Step 7: Contact ----
-function StepContact({ lang, T, lead, setLead }: any) {
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-2">
-        <Label>{T.name}</Label>
-        <Input
-          value={lead.contact.name}
-          onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, name: e.target.value } }))}
-        />
-      </div>
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div className="grid gap-2">
-          <Label>{T.email}</Label>
-          <Input
-            type="email"
-            value={lead.contact.email || ""}
-            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, email: e.target.value } }))}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label>{T.phone}</Label>
-          <Input
-            value={lead.contact.phone || ""}
-            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, phone: e.target.value } }))}
-          />
-        </div>
-      </div>
-      <div className="grid sm:grid-cols-3 gap-4">
-        <div className="grid gap-2">
-          <Label>{T.line}</Label>
-          <Input
-            value={lead.contact.line || ""}
-            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, line: e.target.value } }))}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label>{T.messenger}</Label>
-          <Input
-            value={lead.contact.messenger || ""}
-            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, messenger: e.target.value } }))}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label>{T.zalo}</Label>
-          <Input
-            value={lead.contact.zalo || ""}
-            onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, zalo: e.target.value } }))}
-          />
-        </div>
-      </div>
-      <div className="grid gap-2">
-        <Label>{T.comment}</Label>
-        <Textarea
-          value={lead.contact.comment || ""}
-          onChange={(e) => setLead((d: Lead) => ({ ...d, contact: { ...d.contact, comment: e.target.value } }))}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ---- Plan View ----
-function PlanView({ lang, T, lead, fit, gaps, onBack }: any) {
-  const jobs = sampleJobs(lang);
-  const life = sampleLife(lang);
-  const study = studyPlan(lead, lang);
-  const actions = actionList(lead, lang);
-
-  return (
-    <>
-      <CardHeader className="space-y-2 pt-8">
-        <CardTitle className="text-2xl font-bold">{T.planTitle}</CardTitle>
-        <p className="text-muted-foreground">{T.planSub}</p>
-      </CardHeader>
-      <CardContent className="grid gap-6 pb-8">
-        {/* Fit */}
-        <section className="grid gap-2">
-          <h3 className="font-semibold">{T.planBlocks.fit}</h3>
-          <div className="flex items-center gap-3">
-            <Progress value={fit} className="w-56" />
-            <span className="text-sm text-muted-foreground">{fit}/100</span>
-          </div>
-        </section>
-
-        {/* Visa/Gaps */}
-        <section className="grid gap-2">
-          <h3 className="font-semibold">{T.planBlocks.visa}</h3>
-          {gaps.length === 0 ? (
-            <p className="text-sm text-emerald-600">✅ OK</p>
-          ) : (
-            <ul className="list-disc ml-5 text-sm space-y-1">
-              {gaps.map((g: string, i: number) => <li key={i}>{g}</li>)}
-            </ul>
-          )}
-        </section>
-
-        {/* Study */}
-        <section className="grid gap-2">
-          <h3 className="font-semibold">{T.planBlocks.study}</h3>
-          <ul className="list-disc ml-5 text-sm space-y-1">
-            {study.map((s: string, i: number) => <li key={i}>{s}</li>)}
-          </ul>
-        </section>
-
-        {/* Jobs */}
-        <section className="grid gap-3">
-          <h3 className="font-semibold">{T.sampleJobsTitle}</h3>
-          <div className="grid gap-3">
-            {jobs.map((j: any, idx: number) => (
-              <div key={idx} className="grid sm:grid-cols-5 gap-2 rounded-xl border p-3">
-                <div className="font-medium sm:col-span-2">{j.name}</div>
-                <div className="text-sm">{j.salary}</div>
-                <div className="text-sm">{j.visa}</div>
-                <div className="text-sm">{j.house}・{j.note}</div>
               </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Life */}
-        <section className="grid gap-3">
-          <h3 className="font-semibold">{T.sampleLifeTitle}</h3>
-          <div className="grid gap-3">
-            {life.map((l: any, idx: number) => (
-              <div key={idx} className="rounded-xl border p-3">
-                <div className="font-medium">{l.title}</div>
-                <div className="text-sm text-muted-foreground">{l.body}</div>
+              <div className="mt-6 flex justify-end">
+                <button onClick={next} className="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:opacity-90">{t.buttons.next}</button>
               </div>
-            ))}
-          </div>
-        </section>
+            </div>
+          )}
 
-        {/* Actions */}
-        <section className="grid gap-2">
-          <h3 className="font-semibold">{T.planBlocks.actions}</h3>
-          <ul className="list-disc ml-5 text-sm space-y-1">
-            {actions.map((a: string, i: number) => <li key={i}>{a}</li>)}
-          </ul>
-        </section>
+          {/* STEP 1: DETAIL */}
+          {step === 1 && form && (
+            <div>
+              <div className="text-sm text-gray-500 mb-2">STEP 2/5 · {t.steps.detail}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.jlpt}</label>
+                  <select className="w-full border rounded-xl px-3 py-2" value={form.jlpt || ''} onChange={(e) => update('jlpt', (e.target.value || undefined) as any)}>
+                    <option value="">--</option>
+                    {i18n[lang].options.jlpt.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.visa}</label>
+                  <select className="w-full border rounded-xl px-3 py-2" value={form.visa || ''} onChange={(e) => update('visa', (e.target.value || undefined) as any)}>
+                    <option value="">--</option>
+                    {Object.entries(i18n[lang].options.visa).map(([k,v]: any) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-between">
+                <button onClick={back} className="px-4 py-2 rounded-xl border">{t.buttons.back}</button>
+                <button onClick={next} className="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:opacity-90">{t.buttons.next}</button>
+              </div>
+            </div>
+          )}
 
-        <div className="flex items-center justify-between pt-2">
-          <Button variant="ghost" onClick={onBack}>
-            <ChevronLeft className="mr-1 h-4 w-4" />
-            {T.back}
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={async () => {
-              try { await navigator.clipboard.writeText(JSON.stringify(lead, null, 2)); } catch (_) {}
-            }}>
-              <Clipboard className="mr-1 h-4 w-4" /> {T.download}
-            </Button>
-            <Button onClick={async () => {
-              try {
-                const res = await fetch("/api/lead", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(lead)
-                });
-                console.log("posted:", await res.text());
-              } catch (e) { console.warn(e); }
-            }}>{T.saveAndSend}</Button>
-          </div>
+          {/* STEP 2: LOCATION */}
+          {step === 2 && form && (
+            <div>
+              <div className="text-sm text-gray-500 mb-2">STEP 3/5 · {t.steps.location}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                   <label className="block text-sm text-gray-600 mb-1">{t.labels.prefecture}</label>
+                   <select className="w-full border rounded-xl px-3 py-2" value={form.prefecture || ''}
+                     onChange={(e) => update('prefecture', (e.target.value || undefined) as any)}>
+                     <option value="">--</option>
+                     {JP_PREFS.map((p) => <option key={p} value={p}>{p}</option>)}
+                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.desiredArea}</label>
+                  <input className="w-full border rounded-xl px-3 py-2" placeholder="例: 東京・神奈川"
+                    value={form.desiredArea || ''}
+                    onChange={(e) => update('desiredArea', e.target.value)} />
+                </div>
+              </div>
+              <div className="mt-6 flex justify-between">
+                <button onClick={back} className="px-4 py-2 rounded-xl border">{t.buttons.back}</button>
+                <button onClick={next} className="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:opacity-90">{t.buttons.next}</button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: CONTACT */}
+          {step === 3 && form && (
+            <div>
+              <div className="text-sm text-gray-500 mb-2">STEP 4/5 · {t.steps.contact}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.contactMethod}</label>
+                  <select className="w-full border rounded-xl px-3 py-2" value={form.contactMethod}
+                    onChange={(e) => update('contactMethod', e.target.value as any)}>
+                    {Object.entries(i18n[lang].options.contact).map(([k,v]: any) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{t.labels.contactId}</label>
+                  <input className="w-full border rounded-xl px-3 py-2" placeholder="LINE ID / Facebook name / email"
+                    value={form.contactId} onChange={(e) => update('contactId', e.target.value)} />
+                </div>
+              </div>
+
+              {/* CTA */}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a href={LINKS.lineCandidate} target="_blank" className="px-4 py-2 rounded-xl bg-green-600 text-white shadow hover:opacity-90">{t.cta.candidateLine}</a>
+                <a href={LINKS.messenger} target="_blank" className="px-4 py-2 rounded-xl bg-blue-700 text-white shadow hover:opacity-90">{t.cta.messenger}</a>
+              </div>
+
+              <div className="mt-6 flex justify-between">
+                <button onClick={back} className="px-4 py-2 rounded-xl border">{t.buttons.back}</button>
+                <button onClick={next} className="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:opacity-90">{t.buttons.next}</button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: REVIEW */}
+          {step === 4 && form && (
+            <div>
+              <div className="text-sm text-gray-500 mb-2">STEP 5/5 · {t.steps.review}</div>
+              <div className="rounded-xl border p-4 bg-slate-50">
+                <ul className="text-sm space-y-1">
+                  <li><span className="text-gray-500">{t.labels.name}:</span> {form.name || '-'}</li>
+                  <li><span className="text-gray-500">{t.labels.jlpt}:</span> {form.jlpt || '-'}</li>
+                  <li><span className="text-gray-500">{t.labels.visa}:</span> {((k:any)=> i18n[lang].options.visa[k] || '-')(form.visa as any)}</li>
+                  <li><span className="text-gray-500">{t.labels.prefecture}:</span> {form.prefecture || '-'}</li>
+                  <li><span className="text-gray-500">{t.labels.desiredArea}:</span> {form.desiredArea || '-'}</li>
+                  <li><span className="text-gray-500">{t.labels.contactMethod}:</span> {i18n[lang].options.contact[form.contactMethod]}</li>
+                  <li><span className="text-gray-500">{t.labels.contactId}:</span> {form.contactId || '-'}</li>
+                </ul>
+              </div>
+              <p className="text-xs text-gray-500 mt-3">{t.meta.privacy}</p>
+
+              <div className="mt-6 flex justify-between">
+                <button onClick={back} className="px-4 py-2 rounded-xl border">{t.buttons.edit}</button>
+                <button onClick={submit} className="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:opacity-90">{t.buttons.submit}</button>
+              </div>
+            </div>
+          )}
+
+          {/* DONE + RECOMMENDATIONS */}
+          {step > totalSteps && form && (
+            <div className="">
+              <div className="text-center py-8">
+                <div className="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
+                  <svg viewBox="0 0 24 24" className="w-8 h-8 text-green-600"><path fill="currentColor" d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
+                </div>
+                <h2 className="text-xl font-semibold">{t.meta.sent}</h2>
+                <p className="text-sm text-gray-500 mt-1">{t.meta.savedLocal}</p>
+              </div>
+
+              {/* JOB RECS */}
+              <h3 className="text-lg font-semibold mt-2 mb-2">{t.recs.headerJobs}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {jobRecs.map((j) => (
+                  <div key={j.id} className="border rounded-xl p-3 bg-white">
+                    <div className="font-medium">{j.title}</div>
+                    <div className="text-sm text-gray-600 mt-1">{j.facility} · {j.prefecture}</div>
+                    <div className="flex flex-wrap gap-1 mt-2 text-xs">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100">JLPT≥{j.jlptMin}</span>
+                      {j.housing && <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{t.recs.housing}</span>}
+                      {j.nightShift && <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{t.recs.night}</span>}
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <a href={LINKS.lineCandidate} target="_blank" className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white">{t.recs.apply}</a>
+                      {j.link && <a href={j.link} target="_blank" className="text-xs px-3 py-1.5 rounded-lg border">{t.recs.seeMore}</a>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* STUDY RECS */}
+              <h3 className="text-lg font-semibold mt-6 mb-2">{t.recs.headerStudy}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {studyRecs.map((s, idx) => (
+                  <div key={idx} className="border rounded-xl p-3 bg-white">
+                    <div className="font-medium">{s.title}</div>
+                    <p className="text-sm text-gray-600 mt-1">{s.tip}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* LIFE RECS */}
+              <h3 className="text-lg font-semibold mt-6 mb-2">{t.recs.headerLife}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {lifeRecs.map((s, idx) => (
+                  <div key={idx} className="border rounded-xl p-3 bg-white">
+                    <div className="font-medium">{s.title}</div>
+                    <p className="text-sm text-gray-600 mt-1">{s.tip}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-2 justify-center">
+                <a href={LINKS.lineCandidate} target="_blank" className="px-4 py-2 rounded-xl bg-green-600 text-white shadow hover:opacity-90">{t.cta.candidateLine}</a>
+                <a href={LINKS.messenger} target="_blank" className="px-4 py-2 rounded-xl bg-blue-700 text-white shadow hover:opacity-90">{t.cta.messenger}</a>
+              </div>
+            </div>
+          )}
         </div>
-      </CardContent>
-    </>
-  );
+
+        {/* Footer */}
+        <div className="text-center text-xs text-gray-500 mt-4">
+          <span className="font-medium">Mediflow</span> · Onboarding v3.1（Candidate‑only） · {new Date().getFullYear()}
+        </div>
+      </div>
+    </div>
+  )
 }
-
-// ---- 共通: RadioOption ----
-function RadioOption({ value, label }: { value: string; label: string; }) {
-  return (
-    <Label className="flex items-center gap-2 border rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-50">
-      <RadioGroupItem value={value} />
-      <span>{label}</span>
-    </Label>
-  );
-}
-
-return (
-  <div className="min-h-dvh bg-gradient-to-b from-sky-50 to-white">
-    {/* 追加 */}
-    <SiteHeader />
-
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      {/* ここに既存のオンボーディングUI */}
-      {/* ...フォーム... */}
-      {/* ...結果(上記のコピー削除版)... */}
-
-      {/* CTA */}
-      <CTA />
-    </main>
-
-    {/* 追加 */}
-    <SiteFooter />
-  </div>
-);
